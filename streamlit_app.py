@@ -51,22 +51,28 @@ selected_year_range = st.sidebar.slider(
     value=(min_year, max_year)
 )
 
-# City dropdown
-selected_city = st.sidebar.selectbox(
-    "Select City:",
-    options=["All"] + list(merged_df['City'].dropna().unique())
+# Country multiselect
+countries = merged_df['Country'].dropna().unique()
+selected_countries = st.sidebar.multiselect(
+    "Select Country/Countries:",
+    options=sorted(countries),
+    default=sorted(countries)  # default selects all
 )
 
-# Country dropdown
-selected_country = st.sidebar.selectbox(
-    "Select Country:",
-    options=["All"] + list(merged_df['Country'].dropna().unique())
+# City multiselect
+cities = merged_df['City'].dropna().unique()
+selected_cities = st.sidebar.multiselect(
+    "Select City/Cities:",
+    options=sorted(cities),
+    default=sorted(cities)  # default selects all
 )
 
-# Restaurant dropdown
-selected_restaurant = st.sidebar.selectbox(
-    "Select Restaurant:",
-    options=["All"] + list(merged_df['Restaurant_Name'].dropna().unique())
+# Restaurant multiselect
+restaurants = merged_df['Restaurant_Name'].dropna().unique()
+selected_restaurants = st.sidebar.multiselect(
+    "Select Restaurant(s):",
+    options=sorted(restaurants),
+    default=[]  # default none selected
 )
 
 # ---------------------------------------------------------------------
@@ -76,16 +82,15 @@ filtered_df = merged_df[
     (merged_df['Year'] <= selected_year_range[1])
 ]
 
-if selected_city != "All":
-    filtered_df = filtered_df[filtered_df['City'] == selected_city]
+if selected_countries:
+    filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
 
-if selected_country != "All":
-    filtered_df = filtered_df[filtered_df['Country'] == selected_country]
+if selected_cities:
+    filtered_df = filtered_df[filtered_df['City'].isin(selected_cities)]
 
-if selected_restaurant != "All":
-    filtered_df = filtered_df[filtered_df['Restaurant_Name'] == selected_restaurant]
+if selected_restaurants:
+    filtered_df = filtered_df[filtered_df['Restaurant_Name'].isin(selected_restaurants)]
 
-# ---------------------------------------------------------------------
 # Monthly Sales + Number of Restaurants
 
 st.subheader("Monthly Sales and Number of Restaurants")
