@@ -1,151 +1,164 @@
 import streamlit as st
 import pandas as pd
-import math
+import plotly.graph_objects as go 
+import plotly.express as px
 from pathlib import Path
+import requests
 
-# Set the title and favicon that appear in the Browser's tab bar.
+# ---------------------------------------------------------------------
+# Page configuration
 st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+    page_title='PrC Dashboard',
+    page_icon=':earth_americas:',
+    layout="wide"
 )
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+st.title(":earth_americas: Data Analysis Dashboard")
+st.write("Interactive dashboard to analyze sales and customer data.")
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+# ---------------------------------------------------------------------
+# Load CSV / Excel data
+@st.cache_data(ttl=3600)
+def load_data():
+    actuals_df = pd.read_csv("data/Actuals_data.csv")
+    location_df = pd.read_excel("data/Location.xlsx")
+    
+    # Convert numeric columns
+    actuals_df['Sales(€)'] = pd.to_numeric(actuals_df['Sales(€)'], errors='coerce')
+    actuals_df['Customers'] = pd.to_numeric(actuals_df['Customers'], errors='coerce')
+    
+    # Convert Date
+    actuals_df['Date'] = pd.to_datetime(actuals_df['Date'], dayfirst=True, errors='coerce')
+    actuals_df['Year'] = actuals_df['Date'].dt.year
+    actuals_df['Month'] = actuals_df['Date'].dt.month
+    
+    # Merge with location to get Country, City, Restaurant_Name
+    merged_df = pd.merge(actuals_df, location_df[['Rest_Key', 'Country', 'City', 'Restaurant_Name']], on='Rest_Key', how='left')
+    
+    return actuals_df, location_df, merged_df
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+actuals_df, location_df, merged_df = load_data()
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+# ---------------------------------------------------------------------
+# Sidebar Filters
+st.sidebar.header("Filters")
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+# Year range filter
+min_year, max_year = int(merged_df['Year'].min()), int(merged_df['Year'].max())
+selected_year_range = st.sidebar.slider(
+    "Select Year Range:",
+    min_value=min_year,
+    max_value=max_year,
+    value=(min_year, max_year)
+)
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+# City dropdown
+selected_city = st.sidebar.selectbox(
+    "Select City:",
+    options=["All"] + list(merged_df['City'].dropna().unique())
+)
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+# Country dropdown
+selected_country = st.sidebar.selectbox(
+    "Select Country:",
+    options=["All"] + list(merged_df['Country'].dropna().unique())
+)
 
-    return gdp_df
+# Restaurant dropdown
+selected_restaurant = st.sidebar.selectbox(
+    "Select Restaurant:",
+    options=["All"] + list(merged_df['Restaurant_Name'].dropna().unique())
+)
 
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
+# ---------------------------------------------------------------------
+# Filtered data
+filtered_df = merged_df[
+    (merged_df['Year'] >= selected_year_range[0]) &
+    (merged_df['Year'] <= selected_year_range[1])
 ]
 
-st.header('GDP over time', divider='gray')
+if selected_city != "All":
+    filtered_df = filtered_df[filtered_df['City'] == selected_city]
 
-''
+if selected_country != "All":
+    filtered_df = filtered_df[filtered_df['Country'] == selected_country]
 
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
+if selected_restaurant != "All":
+    filtered_df = filtered_df[filtered_df['Restaurant_Name'] == selected_restaurant]
+
+# ---------------------------------------------------------------------
+# Monthly Sales + Number of Restaurants
+
+st.subheader("Monthly Sales and Number of Restaurants")
+
+sales_by_month = filtered_df.groupby('Month')['Sales(€)'].sum()
+restaurants_by_month = filtered_df.groupby('Month')['Rest_Key'].nunique()
+month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+st.subheader("Monthly Sales and Restaurant Count Table")
+
+# Combine sales and restaurant counts into one DataFrame
+monthly_summary = pd.DataFrame({
+    'Month': [month_names[m-1] for m in sales_by_month.index],
+    'Total Sales (€)': sales_by_month.values,
+    'Number of Restaurants': restaurants_by_month.values
+})
+
+# Display in Streamlit
+st.dataframe(monthly_summary)
+fig_sales = go.Figure()
+fig_sales.add_trace(go.Bar(
+    x=[month_names[m-1] for m in sales_by_month.index],
+    y=sales_by_month.values,
+    name='Sales (€)',
+    marker_color='blue',
+    yaxis='y1'
+))
+fig_sales.add_trace(go.Scatter(
+    x=[month_names[m-1] for m in restaurants_by_month.index],
+    y=restaurants_by_month.values,
+    name='Number of Restaurants',
+    marker_color='orange',
+    mode='lines+markers',
+    yaxis='y2'
+))
+fig_sales.update_layout(
+    title="Sales and Restaurant Count by Month",
+    xaxis=dict(title='Month'),
+    yaxis=dict(title=dict(text='Sales (€)', font=dict(color='blue')), tickfont=dict(color='blue')),
+    yaxis2=dict(title=dict(text='Number of Restaurants', font=dict(color='orange')), tickfont=dict(color='orange'),
+                overlaying='y', side='right'),
+    legend=dict(x=0.1, y=1.1, orientation='h')
 )
+st.plotly_chart(fig_sales, use_container_width=True)
 
-''
-''
+# ---------------------------------------------------------------------
+# Total Customers per Restaurant
+st.subheader("Total Customers per Restaurant")
 
+customers_by_restaurant = filtered_df.groupby('Restaurant_Name')['Customers'].sum().reset_index()
+customers_by_restaurant.columns = ['Restaurant Name', 'Total Customers']
+customers_by_restaurant = customers_by_restaurant.sort_values(by='Total Customers', ascending=False)
+st.dataframe(customers_by_restaurant)
 
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
+# ---------------------------------------------------------------------
+# Total Customers per Country
+st.subheader("Total Customers per Country")
 
-st.header(f'GDP in {to_year}', divider='gray')
+customers_by_country = filtered_df.groupby('Country')['Customers'].sum().reset_index()
+customers_by_country.columns = ['Country', 'Total Customers']
+customers_by_country = customers_by_country.sort_values(by='Total Customers', ascending=False)
+st.dataframe(customers_by_country)
 
-''
+# ---------------------------------------------------------------------
+# Pie Chart: Customer Distribution by Country
+st.subheader("Customer Distribution by Country")
 
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+fig_pie = px.pie(
+    customers_by_country,
+    names='Country',
+    values='Total Customers',
+    title='Total Customers by Country',
+    hole=0.3
+)
+fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+st.plotly_chart(fig_pie, use_container_width=True)
