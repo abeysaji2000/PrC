@@ -21,6 +21,7 @@ st.write("Interactive dashboard to analyze sales and customer data.")
 def load_data():
     actuals_df = pd.read_csv("data/Actuals_data.csv")
     location_df = pd.read_excel("data/Location.xlsx")
+    channel_df = pd.read_excel("data/channel.xlsx")
     
     # Convert numeric columns
     actuals_df['Sales(€)'] = pd.to_numeric(actuals_df['Sales(€)'], errors='coerce')
@@ -33,10 +34,15 @@ def load_data():
     
     # Merge with location to get Country, City, Restaurant_Name
     merged_df = pd.merge(actuals_df, location_df[['Rest_Key', 'Country', 'City', 'Restaurant_Name']], on='Rest_Key', how='left')
-    
-    return actuals_df, location_df, merged_df
+    merged_df = pd.merge(
+        merged_df,
+        channel_df[['Channel_code', 'Channel Description', 'Channel Summary']],
+        on='Channel_code',
+        how='left'
+    )
+    return actuals_df, location_df, merged_df,channel_df
 
-actuals_df, location_df, merged_df = load_data()
+actuals_df, location_df, merged_df,channel_df = load_data()
 
 # ---------------------------------------------------------------------
 # Sidebar Filters
@@ -166,3 +172,17 @@ fig_pie = px.pie(
 )
 fig_pie.update_traces(textposition='inside', textinfo='percent+label')
 st.plotly_chart(fig_pie, use_container_width=True)
+st.subheader("Customer Distribution by Channel")
+sales_by_channel = filtered_df.groupby('Channel Description')['Sales(€)'].sum().reset_index()
+sales_by_channel.columns = ['Channel', 'Total Sales (€)']
+sales_by_channel = sales_by_channel.sort_values(by='Total Sales (€)', ascending=False)
+
+fig_channel_pie = px.pie(
+    sales_by_channel,
+    names='Channel',
+    values='Total Sales (€)',
+    title='Total Sales by Channel',
+    hole=0.3
+)
+fig_channel_pie.update_traces(textposition='inside', textinfo='percent+label')
+st.plotly_chart(fig_channel_pie, use_container_width=True)
