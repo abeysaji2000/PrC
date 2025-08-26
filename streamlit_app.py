@@ -21,7 +21,7 @@ st.write("Interactive dashboard to analyze sales and customer data.")
 def load_data():
     actuals_df = pd.read_csv("data/Actuals_data.csv")
     location_df = pd.read_excel("data/Location.xlsx")
-    channel_df = pd.read_excel("data/channel.xlsx")
+    channel_df = pd.read_excel("data/channel.xls")
     
     # Convert numeric columns
     actuals_df['Sales(€)'] = pd.to_numeric(actuals_df['Sales(€)'], errors='coerce')
